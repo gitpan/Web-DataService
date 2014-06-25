@@ -41,7 +41,7 @@ serializing the result in the appropriate output format.
 
 package Web::DataService;
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
 use parent qw(Exporter);
 

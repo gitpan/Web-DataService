@@ -11,6 +11,7 @@ lib/Web/DataService/Documentation.pm
 lib/Web/DataService/PodParser.pm
 lib/Web/DataService/Render.pm
 lib/Web/DataService/Cache.pm
+lib/Web/DataService/Attributes.pod
 t/00-load.t
 t/pod-coverage.t
 t/pod.t

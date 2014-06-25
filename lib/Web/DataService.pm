@@ -41,7 +41,7 @@ serializing the result in the appropriate output format.
 
 package Web::DataService;
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 use parent qw(Exporter);
 
@@ -95,11 +95,9 @@ my (%DS_DEF) = ( 'name' => 'single',
 		 'doc_defs' => 'single',
 		 'doc_header' => 'single',
 		 'doc_footer' => 'single',
-		 'doc_layout' => 'single',
 		 'default_limit' => 'single',
 		 'streaming_threshold' => 'single',
-		 'allow_unrecognized' => 'single',
-		 'doc_dir' => 'single' );
+		 'allow_unrecognized' => 'single');
 
 our ($DEBUG);
 our ($ONE_REQUEST);
@@ -1286,6 +1284,16 @@ have associated documentation strings.
 Define a ruleset with the given name, containing the specified rules and
 documentation.  The arguments to this method are simply passed on to the
 C<define_ruleset> method of L<HTTP::Validate>.
+
+=head3 define_block ( block_name, { attributes ... }, documentation ... )
+
+Define an output block with the given name, containing the specified output
+fields and documentation.
+
+=head3 define_set ( set_name, { attributes ... }, documentation ... )
+
+Define a set with the given name, containing the specified values and
+documentation.
 
 =head2 EXECUTION
 

@@ -3,6 +3,14 @@ Changes
 MANIFEST
 README
 lib/Web/DataService.pm
+lib/Web/DataService/Request.pm
+lib/Web/DataService/Format.pm
+lib/Web/DataService/Vocabulary.pm
+lib/Web/DataService/Output.pm
+lib/Web/DataService/Documentation.pm
+lib/Web/DataService/PodParser.pm
+lib/Web/DataService/Render.pm
+lib/Web/DataService/Cache.pm
 t/00-load.t
 t/pod-coverage.t
 t/pod.t

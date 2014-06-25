@@ -7,6 +7,11 @@ my $builder = Module::Build->new(
     license             => 'perl',
     dist_author         => 'Michael McClennen <mmcclenn@cpan.org>',
     dist_version_from   => 'lib/Web/DataService.pm',
+    requires => {
+	'Dancer' => 0,
+        'HTTP::Validate' => '0.35',
+	'Try::Tiny' => 0,
+    },
     build_requires => {
         'Test::More' => 0,
     },

@@ -8,7 +8,10 @@ WriteMakefile
           'EXE_FILES' => [],
           'VERSION_FROM' => 'lib/Web/DataService.pm',
           'PREREQ_PM' => {
-                           'Test::More' => 0
+                           'Try::Tiny' => 0,
+                           'Test::More' => 0,
+                           'Dancer' => 0,
+                           'HTTP::Validate' => '0.35'
                          }
         )
 ;

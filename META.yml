@@ -15,7 +15,15 @@ name: Web-DataService
 provides:
   Web::DataService:
     file: lib/Web/DataService.pm
-    version: 0.10
+    version: 0.11
+  Web::DataService::PodParser:
+    file: lib/Web/DataService/PodParser.pm
+  Web::DataService::Request:
+    file: lib/Web/DataService/Request.pm
+requires:
+  Dancer: 0
+  HTTP::Validate: 0.35
+  Try::Tiny: 0
 resources:
   license: http://dev.perl.org/licenses/
-version: 0.10
+version: 0.11

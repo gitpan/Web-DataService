@@ -12,7 +12,17 @@ lib/Web/DataService/PodParser.pm
 lib/Web/DataService/Render.pm
 lib/Web/DataService/Cache.pm
 lib/Web/DataService/Attributes.pod
+lib/Web/DataService/Plugin/Dancer.pm
+lib/Web/DataService/Plugin/TemplateToolkit.pm
+lib/Web/DataService/Plugin/JSON.pm
+lib/Web/DataService/Plugin/Text.pm
+lib/Web/DataService/Plugin/XML.pm
+doc/doc_defs.tt
+doc/doc_error.tt
+doc/doc_header.tt
+doc/doc_footer.tt
 t/00-load.t
+t/01-basic.t
 t/pod-coverage.t
 t/pod.t
 Makefile.PL

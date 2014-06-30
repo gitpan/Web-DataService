@@ -9,7 +9,7 @@ my $builder = Module::Build->new(
     dist_version_from   => 'lib/Web/DataService.pm',
     requires => {
 	'Dancer' => 0,
-        'HTTP::Validate' => '0.35',
+        'HTTP::Validate' => 0.35,
 	'Try::Tiny' => 0,
     },
     build_requires => {

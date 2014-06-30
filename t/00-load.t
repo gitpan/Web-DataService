@@ -3,7 +3,8 @@
 use Test::More tests => 2;
 
 BEGIN {
-        use_ok( 'Dancer' );
+        use_ok( 'Dancer', qw(!pass)) or
+	    diag( "This module depends on Dancer.pm" );
 	use_ok( 'Web::DataService' );
 }
 

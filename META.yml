@@ -15,7 +15,17 @@ name: Web-DataService
 provides:
   Web::DataService:
     file: lib/Web/DataService.pm
-    version: 0.12
+    version: 0.13
+  Web::DataService::Plugin::Dancer:
+    file: lib/Web/DataService/Plugin/Dancer.pm
+  Web::DataService::Plugin::JSON:
+    file: lib/Web/DataService/Plugin/JSON.pm
+  Web::DataService::Plugin::TemplateToolkit:
+    file: lib/Web/DataService/Plugin/TemplateToolkit.pm
+  Web::DataService::Plugin::Text:
+    file: lib/Web/DataService/Plugin/Text.pm
+  Web::DataService::Plugin::XML:
+    file: lib/Web/DataService/Plugin/XML.pm
   Web::DataService::PodParser:
     file: lib/Web/DataService/PodParser.pm
   Web::DataService::Request:
@@ -26,4 +36,4 @@ requires:
   Try::Tiny: 0
 resources:
   license: http://dev.perl.org/licenses/
-version: 0.12
+version: 0.13

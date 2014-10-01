@@ -16,7 +16,7 @@ Web::DataService - a framework for building data service applications for the We
 
 =head1 VERSION
 
-Version 0.20
+Version 0.21
 
 =head1 SYNOPSIS
 
@@ -48,7 +48,7 @@ service is always fully and correctly documented.
 
 package Web::DataService;
 
-our $VERSION = '0.20';
+our $VERSION = '0.21';
 
 use Carp qw( carp croak confess );
 use Scalar::Util qw( reftype blessed weaken );

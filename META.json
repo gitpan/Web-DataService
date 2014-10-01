@@ -4,7 +4,7 @@
       "Michael McClennen <mmcclenn@cpan.org>"
    ],
    "dynamic_config" : 1,
-   "generated_by" : "Module::Build version 0.421",
+   "generated_by" : "Module::Build version 0.4208",
    "license" : [
       "perl_5"
    ],
@@ -43,7 +43,7 @@
    "provides" : {
       "Web::DataService" : {
          "file" : "lib/Web/DataService.pm",
-         "version" : "0.20"
+         "version" : "0.21"
       },
       "Web::DataService::Execute" : {
          "file" : "lib/Web/DataService/Execute.pm"
@@ -100,11 +100,11 @@
          "file" : "lib/Web/DataService/Vocabulary.pm"
       }
    },
-   "release_status" : "unstable",
+   "release_status" : "stable",
    "resources" : {
       "license" : [
          "http://dev.perl.org/licenses/"
       ]
    },
-   "version" : "0.20"
+   "version" : "0.21"
 }

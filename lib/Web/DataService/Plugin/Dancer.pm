@@ -9,7 +9,7 @@
 # Other plugins will eventually be developed to fill this same role using
 # Mojolicious and other frameworks.
 # 
-# Author: Michael McClennen <mmcclenn@geology.wisc.edu>
+# Author: Michael McClennen <mmcclenn@cpan.org>
 
 
 use strict;
@@ -18,6 +18,12 @@ package Web::DataService::Plugin::Dancer;
 
 use Carp qw( carp croak );
 
+
+sub initialize_plugin {
+    
+    Dancer::set(warnings => 0);
+    #Dancer::set(app_handles_errors => 1);
+}
 
 
 # The following methods are called with the parameters specified: $ds is a
@@ -28,7 +34,7 @@ use Carp qw( carp croak );
 
 # ============================================================================
 
-# get_config ( ds, name, param )
+# read_config ( ds, name, param )
 # 
 # This method returns configuration information from the application
 # configuration file used by the foundation framework.  If $param is given,
@@ -39,31 +45,61 @@ use Carp qw( carp croak );
 # If $param is not given, then return the configuration group $name if that
 # was given, or else a hash of the entire set of configuration parameters.
 
-sub get_config {
+sub read_config {
     
-    my ($class, $ds, $name, $param) = @_;
+    my ($class, $ds) = @_;
     
-    my $config = Dancer::config;
-    
-    if ( defined $param )
-    {
-	return $config->{$name}{$param} if defined $name;
-	return $config->{$param};
-    }
-    
-    elsif ( defined $name )
-    {
-	return $config->{$name};
-    }
-    
-    else
-    {
-	return $config;
-    }
+    my $config_hash = Dancer::config;
+    $ds->{_config} = $config_hash;
 }
 
 
-# get_connection ( request )
+# store_request ( outer, inner )
+# 
+# Add to the specified "outer" request object a link to our "inner" request
+# object.
+
+sub store_inner {
+    
+    my ($plugin, $outer, $inner) = @_;
+    
+    Dancer::var('wds_request', $inner);
+}
+
+
+# retrieve_request ( outer )
+# 
+# Return the "inner" link from the specified request object.
+
+sub retrieve_inner {
+
+    my ($plugin, $outer) = @_;
+    
+    return Dancer::var('wds_request');
+}
+
+
+# store_outer ( outer )
+# 
+# Store the current 'outer' request object for later use.  This is a no-op for
+# Dancer, since the current 'outer' request object is always available.
+
+sub store_outer {
+
+}
+
+
+# retrieve_outer ( )
+# 
+# Return the 'outer' request object for the request being currently handled.
+
+sub retrieve_outer {
+    
+    return Dancer::request;
+}
+
+
+# get_connection ( )
 # 
 # This method returns a database connection.  If you wish to use it, make sure
 # that you "use Dancer::Plugin::Database" in your main program.
@@ -71,6 +107,16 @@ sub get_config {
 sub get_connection {
     
     return Dancer::Plugin::Database::database();
+}
+
+
+# get_base_url ( )
+# 
+# Return the base URL for the data service.
+
+sub get_base_url {
+    
+    return Dancer::request->base;
 }
 
 
@@ -84,15 +130,13 @@ sub get_request_url {
 }
 
 
-# get_base_url ( request )
+# get_request_path ( request )
 # 
-# Return the base URL for the data service.
+# Return the request path
 
-sub get_base_url {
-    
-    my ($class, $request) = @_;
-    
-    return Dancer::request->uri_base . $request->{ds}->get_base_path;
+sub get_request_path {
+
+    return Dancer::request->path;
 }
 
 
@@ -101,8 +145,24 @@ sub get_base_url {
 # Return the parameters for the current request.
 
 sub get_params {
+    
+    my ($plugin, $request, @rest) = @_;
+    
+    my $params = Dancer::params(@rest);
+    delete $params->{splat};
+    return $params;
+}
 
-    return Dancer::params;
+
+# get_param ( param )
+# 
+# Return the specified raw parameter value for the current request.
+
+sub get_param {
+    
+    my ($plugin, $request, $param) = @_;
+    
+    return Dancer::params->{$param};
 }
 
 
@@ -121,7 +181,7 @@ sub set_cors_header {
 }
 
 
-# set_content_type ( request, type )
+# set_content_type ( outer, type )
 # 
 # Set the response content type.
 
@@ -129,11 +189,11 @@ sub set_content_type {
     
     my ($plugin, $request, $type) = @_;
     
-    Dancer::content_type($type);
+    Dancer::content_type $type;
 }
 
 
-# set_header ( request, header, value )
+# set_header ( outer, header, value )
 # 
 # Set an arbitrary header in the response.
 
@@ -141,11 +201,11 @@ sub set_header {
     
     my ($plugin, $request, $header, $value) = @_;
     
-    Dancer::response->header($header => $value);    
+    Dancer::header $header => $value;
 }
 
 
-# set_status ( ds, outer, status )
+# set_status ( outer, status )
 # 
 # Set the response status code.
 
@@ -153,20 +213,64 @@ sub set_status {
     
     my ($class, $request, $code) = @_;
     
-    Dancer::status($code);
+    Dancer::status $code;
+}
+
+
+# set_body ( outer, body )
+# 
+# Set the response body.
+
+sub set_body {
+    
+    my ($class, $request, $body) = @_;
+    
+    Dancer::SharedData->response->content($body);
 }
 
 	
-# send_file ( request, filename )
+# file_path ( @components )
+# 
+# Concatenate the specified file paths together, in a file-system-independent
+# manner. 
+
+sub file_path {
+
+    shift;
+    return Dancer::path(@_);
+}
+
+
+# file_readable ( filename )
+# 
+# Return true if the specified file exists and is readable, false otherwise.
+
+sub file_readable {
+    
+    my $file_name = Dancer::path(Dancer::setting('public'), $_[1]);
+    return -r $file_name;
+}
+
+
+# file_exists ( filename )
+# 
+# Return true if the specified file exists, false otherwise.
+
+sub file_exists {
+
+    my $file_name = Dancer::path(Dancer::setting('public'), $_[1]);
+    return -e $file_name;
+}
+
+
+# send_file ( outer, filename )
 # 
 # Send as the response the contents of the specified file.  For Dancer, the path
 # is always evaluated relative to the 'public' directory.
 
 sub send_file {
     
-    my ($class, $request, $filename) = @_;
-    
-    return Dancer::send_file($filename);
+    return Dancer::send_file($_[2]);
 }
 
 

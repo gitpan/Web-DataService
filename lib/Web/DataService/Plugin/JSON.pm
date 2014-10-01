@@ -31,22 +31,26 @@ sub emit_header {
     
     # Check if we have been asked to report the data source and parameters.
     
-    if ( $request->display_source )
+    if ( $request->display_datainfo )
     {
-	my $info = $request->get_data_source;
-	my $base = $info->{base_url};
-	my $url_rest = $request->get_request_url;
+	my $info = $request->data_info;
 	
-	my $data_url = $base . $url_rest;
-	my $doc_url = $base . $request->get_request_path . "_doc.html";
+	foreach my $key ( $request->data_info_keys )
+	{
+	    next unless $info->{$key};
+	    my $value = json_clean($info->{$key});
+	    
+	    $output .= qq{"$key":$value,\n};
+	}
 	
-	$output .= '"data_source":' . json_clean($info->{data_source}) . ",\n";
-	$output .= '"data_source_url":' . json_clean($base . '/') . ",\n";
-	$output .= '"data_license":' . json_clean($info->{license}) . ",\n";
-	$output .= '"data_license_url":' . json_clean($info->{license_url}) . ",\n";
-	$output .= '"documentation_url":' . json_clean($doc_url) . ",\n";
-	$output .= '"data_url":' . json_clean($data_url) . ",\n";
-	$output .= '"access_time":' . json_clean($info->{access_time}) . ",\n";
+	#$output .= '"data_provider":' . json_clean($info->{data_provider}) . ",\n";
+	#$output .= '"data_source":' . json_clean($info->{data_source}) . ",\n";
+	#$output .= '"data_source_url":' . json_clean($base . '/') . ",\n";
+	#$output .= '"data_license":' . json_clean($info->{license}) . ",\n";
+	#$output .= '"data_license_url":' . json_clean($info->{license_url}) . ",\n";
+	#$output .= '"documentation_url":' . json_clean($doc_url) . ",\n";
+	#$output .= '"data_url":' . json_clean($data_url) . ",\n";
+	#$output .= '"access_time":' . json_clean($info->{access_time}) . ",\n";
 	$output .= '"parameters":{' . "\n";
 	
 	my @display = $request->params_for_display;
@@ -134,9 +138,36 @@ sub emit_footer {
 }
 
 
-# emit_record ( )
+# emit_error ( code, errors, warnings )
 # 
-# Return the formatted output for a single record in JSON.
+# Return the formatted output for an error message body in JSON.
+
+sub emit_error {
+    
+    my ($class, $code, $errors, $warnings) = @_;
+    
+    unless ( ref $errors eq 'ARRAY' )
+    {
+	$errors = [ "bad call to 'emit_error'" ];
+    }
+    
+    if ( defined $warnings && ! ref $warnings eq 'ARRAY' )
+    {
+	$warnings = [ "bad call to 'emit_error'" ];
+    }
+    
+    my $error = '"status_code": ' . $code;
+    $error .= ",\n" . json_list_value("errors", @$errors);
+    $error .= ",\n" . json_list_value("warnings", @$warnings) if ref $warnings eq 'ARRAY' && @$warnings;
+    
+    return "{ $error }\n";
+}
+
+
+# emit_record ( request, record, field_list )
+# 
+# Return the formatted output for a single record in JSON according to the
+# specified field list.
 
 sub emit_record {
     
@@ -197,17 +228,17 @@ sub emit_object {
 	          : defined $record->{$field} ? $record->{$field}
 		  :                             '';
 	
-	# If the field has a 'rule' attribute and the value is a hashref then
+	# If the field has a 'sub_record' attribute and the value is a hashref then
 	# generate output to represent a sub-object by applying the named
 	# output section to the value.  If the value is a scalar then this
 	# field is silently ignored.
 	
-	if ( defined $f->{rule} )
+	if ( defined $f->{sub_record} )
 	{
-	    $request->configure_block($f->{rule});
+	    $request->configure_block($f->{sub_record});
 	    
-	    my $output_list = $request->{block_field_list}{$f->{rule}};
-	    my $proc_list = $request->{block_proc_list}{$f->{rule}};
+	    my $output_list = $request->{block_field_list}{$f->{sub_record}};
+	    my $proc_list = $request->{block_proc_list}{$f->{sub_record}};
 	    
 	    if ( ref $value && reftype $value eq 'HASH' )
 	    {

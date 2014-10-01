@@ -41,22 +41,17 @@ sub emit_header {
     # If the user has specified that the source of this data be shown, add
     # some header lines to convey this.
     
-    if ( $request->display_source )
+    if ( $request->display_datainfo )
     {
-	my $source = $request->get_data_source;
-	my $base = $source->{base_url};
-	my $url_rest = $request->get_request_url;
+	my $info = $request->data_info;
 	
-	my $data_url = $base . $url_rest;
-	my $doc_url = $base . $request->get_request_path . "_doc.html";
+	foreach my $key ( $request->data_info_keys )
+	{
+	    next unless $info->{$key};
+	    my $label = generate_label($key);
+	    $output .= $class->emit_line($request, $label, $info->{$key});
+	}
 	
-	$output .= $class->emit_line($request, "Data Source:", $source->{name});
-	$output .= $class->emit_line($request, "Data Source URL:", $base . '/');
-	$output .= $class->emit_line($request, "Data License:", $source->{license});
-	$output .= $class->emit_line($request, "Data License URL:", $source->{license_url});
-	$output .= $class->emit_line($request, "Documentation URL:", $doc_url);
-	$output .= $class->emit_line($request, "Data URL:", $data_url);
-	$output .= $class->emit_line($request, "Access Time:", $source->{access_time});
 	$output .= $class->emit_line($request, "Parameters:");
 	
 	my @display = $request->params_for_display;
@@ -130,6 +125,23 @@ sub emit_header {
     # Return the text that we have generated.
     
     return $output;
+}
+
+
+# generate_label ( key )
+# 
+# Turn a field identifier (key) into a text label by turning underscores into
+# spaces and capitalizing words.
+
+sub generate_label {
+    
+    my ($key) = @_;
+    
+    my @components = split(/_/, $key);
+    foreach ( @components ) { s/^url$/URL/ }
+    my $label = join(' ', map { ucfirst } @components);
+    
+    return $label;
 }
 
 
@@ -213,16 +225,16 @@ sub emit_line {
     my $class = shift;
     my $request = shift;
     
-    my $term = $request->linebreak_cr ? "\n" : "\r\n";
+    my $linebreak = $request->linebreak;
     
-    if ( $request->output_format eq 'tsv' )
+    if ( $request->response_format eq 'tsv' )
     {
-	return join("\t", map { tsv_clean($_) } @_) . $term;
+	return join("\t", map { tsv_clean($_) } @_) . $linebreak;
     }
     
     else
     {
-	return join(',', map { csv_clean($_) } @_) . $term;
+	return join(',', map { csv_clean($_) } @_) . $linebreak;
     }
 }
 

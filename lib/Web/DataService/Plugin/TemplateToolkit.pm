@@ -9,7 +9,7 @@
 # Other plugins will eventually be developed to fill this same role using
 # Mojolicious and other frameworks.
 # 
-# Author: Michael McClennen <mmcclenn@geology.wisc.edu>
+# Author: Michael McClennen <mmcclenn@cpan.org>
 
 
 use strict;
@@ -35,14 +35,14 @@ sub initialize_service {
 }
 
 
-# initialize_engine ( ds, config, attrs )
+# new_engine ( ds, config, attrs )
 # 
 # This method is called automatically to initialize the necessary template
 # processing engines.
 
-sub initialize_engine {
+sub new_engine {
     
-    my ($plugin, $ds, $config, $attrs) = @_;
+    my ($plugin, $ds, $attrs) = @_;
     
     # Start with a set of default attributes. 
     
@@ -53,7 +53,7 @@ sub initialize_engine {
     
     # These can be overridden by attributes in the configuration file.
     
-    my $tt_config = $config->{engines}{template_toolkit} // $config->{template_toolkit} // {};
+    my $tt_config = $ds->config_value('engines')->{template_toolkit} // $ds->config_value('template_toolkit') // {};
     
     foreach my $key ( keys %$tt_config )
     {
@@ -90,17 +90,17 @@ sub render_template {
     # First, determine the list of templates to render, by unpacking the
     # $templates hash.
     
-    my @templates;
+    my $base = '';
     
-    push @templates, $templates->{defs} if $templates->{defs};
-    push @templates, $templates->{header} if $templates->{header};
-    push @templates, $templates->{main} if $templates->{main};
-    push @templates, $templates->{footer} if $templates->{footer};
+    $base .= "<% PROCESS '$templates->{defs}' %>\n" if $templates->{defs};
+    $base .= "<% PROCESS '$templates->{header}' %>\n" if $templates->{header};
+    $base .= "<% PROCESS '$templates->{main}' %>\n" if $templates->{main};
+    $base .= "<% PROCESS '$templates->{footer}' %>\n" if $templates->{footer};
     
     # Then construct a special template to render them in order.
     
-    my $list = join(' + ', @templates);
-    my $base = "<% PROCESS $list %>";
+    #my $list = join(' + ', @templates);
+    #my $base = "<% PROCESS $list %>";
     
     # Process it and return the result.
     

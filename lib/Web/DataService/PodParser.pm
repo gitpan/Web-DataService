@@ -123,6 +123,35 @@ sub parse_pod {
 	    my $cmd = $1;
 	    my $content = $2;
 	    
+	    # If this command is anything but =over, delete any pending column
+	    # definitions.
+	    
+	    delete $self->{pending} if $cmd ne 'over';
+	    
+	    # If the line starts with "=for wds_nav", then just pass the
+	    # remainder of the line through.  This command indicates content
+	    # that should be ignored for POD output, because its purpose is
+	    # web-page navigation.
+	    
+	    if ( $cmd eq 'for' && $content =~ qr{ ^ wds_nav \s+ (.*) }xs )
+	    {
+		my $rest = $1;
+		
+		if ( $rest =~ qr{ ^ = (\w+) \s* (.*) }xs )
+		{
+		    $cmd = $1;
+		    $content = $2;
+		}
+		
+		else
+		{
+		    $self->add_content($rest);
+		    next;
+		}
+	    }
+	    
+	    # Otherwise, process the commands as we find them.
+	    
 	    if ( $cmd =~ /head([1-9])/ )
 	    {
 		$self->add_heading($1, $content);
@@ -157,7 +186,7 @@ sub parse_pod {
 	    
 	    elsif ( $cmd eq 'for' )
 	    {
-		if ( $content =~ qr{ ^ pp_ }x )
+		if ( $content =~ qr{ ^ wds_ }x )
 		{
 		    $self->add_directive($content);
 		}
@@ -267,6 +296,11 @@ sub add_list {
     
     my $list_node = $self->add_node({ type => 'list', level => $self->{list_level}, indent => $indent,
 				      body => [], list_type => '' });
+    
+    $list_node->{column_spec} = $self->{pending}{column_spec};
+    $list_node->{no_header} = $self->{pending}{no_header};
+    
+    delete $self->{pending};
     
     push @{$self->{stack}}, $list_node;
     $self->{current} = undef;
@@ -415,15 +449,20 @@ sub add_directive {
 
     my ($self, $directive) = @_;
     
-    if ( $directive =~ /^(pp_table_(?:no_)?header)\s+(.*)/ )
+    if ( $directive =~ /^(wds_table_(?:no_)?header)\s+(.*)/ )
     {
 	my $cmd = $1;
 	my $column_spec = $2;
 	my @columns = split qr{ \s+ \| \s+ }x, $column_spec;
 	
-	return unless $self->{list_level};
-	$self->{stack}[-1]{column_spec} = \@columns;
-	$self->{stack}[-1]{no_header} = 1 if $cmd eq 'pp_table_no_header';
+	$self->{pending}{column_spec} = \@columns;
+	$self->{pending}{no_header} = 1 if $cmd eq 'wds_table_no_header';
+    }
+    
+    elsif ( $directive =~ qr{ ^ wds_nav }xs )
+    {
+	# ignore this, as it would have been processed above had it had an
+	# argument.
     }
     
     else
@@ -486,6 +525,11 @@ sub decode_content {
 			$content[-1] = $1;
 			$cn->{target} = $2;
 		    }
+		    else
+		    {
+			$cn->{target} = $content[-1];
+			@content = ();
+		    }
 		}
 		
 		if ( @content == 0 ) {
@@ -523,7 +567,7 @@ sub add_error {
     
     push @{$self->{errors}}, { line_no => $self->{line_no}, msg => $errmsg };
     
-    $self->add_node({ type => 'error', content => $errmsg });
+    $self->add_node({ type => 'error', line_no => $self->{line_no}, content => $errmsg });
 }
 
 
@@ -537,6 +581,7 @@ sub generate_html {
     my $css = $attrs->{css};
     
     $self->{generate_tables} = $attrs->{tables};
+    $self->{url_generator} = $attrs->{url_generator};
     $self->{html_list_level} = 0;
     $self->{html_expect_subhead} = 0;
     $self->{html_stack} = ["<body>"];
@@ -678,6 +723,11 @@ sub generate_html_list {
 	elsif ( $subnode->{type} eq 'list' )
 	{
 	    $output .= $self->generate_html_list($subnode);
+	}
+	
+	elsif ( $subnode->{type} eq 'error' )
+	{
+	    $output .= $self->generate_html_error($subnode);
 	}
     }
     
@@ -977,34 +1027,48 @@ sub generate_html_content {
     elsif ( ref $content eq 'HASH' )
     {
 	my $code = $content->{code};
-	my $subcont = $content->{content} || '';
+	my $subcontent = $self->generate_html_content($content->{content}) || '';
 	my $href = $content->{target} || $content->{content} || '';
 	
 	if ( $code eq 'L' )
 	{
-	    my $target = $href =~ qr{ ^ \w+ : }xs ? 'target="_blank"' : '';
+	    # URIs of the form "node:..." or "path:..." are turned into site-relative
+	    # URLs.
 	    
-	    return "<a class=\"pod_link\" $target href=\"$href\">$subcont</a>";
+	    if ( $href =~ qr{ ^ (?: node|op|path ) (abs|rel|site )? [:] }xs )
+	    {
+		my $target = $self->{url_generator}->($href) // '';
+		my $blank = defined $1 && $1 eq 'abs' ? 'target="_blank"' : '';
+		$subcontent ||= $target;
+		return qq{<a class="pod_link" ${blank}href="$target">$subcontent</a>};
+	    }
+	    
+	    else
+	    {
+		my $window = $href =~ qr{ ^ \w+ : }xs ? 'target="_blank"' : '';
+		$subcontent ||= $href;
+		return qq{<a class="pod_link" $window href="$href">$subcontent</a>};
+	    }
 	}
 	
 	elsif ( $code eq 'I' or $code eq 'F' )
 	{
-	    return "<em>" . $self->generate_html_content($subcont) . "</em>";
+	    return "<em>" . $subcontent . "</em>";
 	}
 	
 	elsif ( $code eq 'B' )
 	{
-	    return "<strong>" . $self->generate_html_content($subcont) . "</strong>";
+	    return "<strong>" . $subcontent . "</strong>";
 	}
 	
 	elsif ( $code eq 'C' )
 	{
-	    return "<tt>" . $self->generate_html_content($subcont) . "</tt>";
+	    return "<tt>" . $subcontent . "</tt>";
 	}
 	
 	elsif ( $code eq 'E' )
 	{
-	    return "&$subcont;";
+	    return "&$subcontent;";
 	}
     }
 }
@@ -1087,5 +1151,88 @@ sub generate_html_error {
 
     my ($self, $node) = @_;
     
-    return "\n<!-- ERROR: $node->{content} -->\n";
+    my $line = $node->{line_no} ? " at line $node->{line_no}" : "";
+    
+    return "\n<!-- ERROR$line: $node->{content} -->\n\n";
 }
+
+1;
+
+
+=head1 NAME
+
+Web::DataService::PodParser - Pod parser module for Web::DataService
+
+=head1 SYNOPSIS
+
+This module provides an engine that can parse Pod and generate HTML, for use
+in generating data service documentation pages.  It is used as follows:
+
+    my $parser = Web::DataService::PodParser->new();
+    
+    $parser->parse_pod($doc_string);
+    
+    my $doc_html = $parser->generate_html({ attributes... });
+
+=head1 METHODS
+
+This module provides the following methods:
+
+=head2 new
+
+This class method creates a new instance of the parser.
+
+=head2 parse_pod
+
+This method takes a single argument, which must be a string containing Pod
+text.  A parse tree is built from this input.
+
+=head2 generate_html
+
+This method uses the parse tree built by C<parse_pod> to create HTML content.
+This content is returned as a single string, which can then be sent as the
+body of a response message.
+
+This method takes an attribute hash, which can include any of the following
+attributes:
+
+=head3 css
+
+The value of this attribute should be the URL of a stylesheet, which will be
+included via an HTML <link> tag.  It may be either an absolute or a
+site-relative URL.
+
+=head3 tables
+
+If this attribute has a true value, then Pod lists will be rendered as HTML
+tables.  Otherwise, they will be rendered as HTML definition lists using the
+tags C<dl>, C<dt>, and C<dd>.
+
+=head3 url_generator
+
+The value of this attribute must be a code reference.  This is called whenever
+an embedded link is encountered with one of the prefixes C<node:>, C<op:>, or
+C<path:>, in order to generate a data service URL corresponding to the
+remainder of the link (see
+L<Web::DataService::Documentation|Web::DataService::Documentation/Embedded links>).
+
+
+=head1 AUTHOR
+
+mmcclenn "at" cpan.org
+
+=head1 BUGS
+
+Please report any bugs or feature requests to C<bug-web-dataservice at rt.cpan.org>, or through
+the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Web-DataService>.  I will be notified, and then you'll
+automatically be notified of progress on your bug as I make changes.
+
+=head1 COPYRIGHT & LICENSE
+
+Copyright 2014 Michael McClennen, all rights reserved.
+
+This program is free software; you can redistribute it and/or modify it
+under the same terms as Perl itself.
+
+=cut
+

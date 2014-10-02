@@ -1,5 +1,24 @@
 #!/usr/bin/env perl
 
+=head1 NAME
+
+wdsinstallfiles - helper script to create new Web::DataService applications
+
+=head1 SYNOPSIS
+
+wdsinstallfiles [options]
+
+=head1 OPTIONS
+
+    -h, --help            : print what you are currently reading
+    -p, --path            : the path where application will be created
+                              (current directory if not specified)
+    -x, --no-check        : don't check for the latest version of Web::DataService
+                              (checking version implies internet connection)
+    -v, --version         : print the version of Web::DataService being used
+
+=cut
+
 eval 'exec /opt/local/bin/perl5.12  -S $0 ${1+"$@"}'
     if 0; # not running under some shell
 
@@ -100,7 +119,10 @@ else
 }
 
 
-# subs
+# dancer_app_tree ( )
+# 
+# Return the install tree for a Dancer-based application.  Currently this is
+# the only one available, but we will eventually add catalyst_app_tree, etc.
 
 sub dancer_app_tree {
     
@@ -140,6 +162,13 @@ sub dancer_app_tree {
     };
 }
 
+
+# unpack_files ( tree, templates, path )
+# 
+# This subroutine is called recursively to unpack a tree of files.  The tree
+# structure must be passed as the first argument, followed by a hash whose
+# keys are paths from the tree and whose values are the corresponding file
+# contents.  The third argument is the path under which to create the files.
 
 sub unpack_files {
     
@@ -202,6 +231,13 @@ sub safe_mkdir {
     }
 }
 
+
+# read_file ( path, contents_ref )
+# 
+# Read a file using the filename given by $path, and append its contents to the
+# scalar pointed to by $contents_ref.  Change any initial occurrence of = to
+# ), so that files containing Pod are protected from interpretation.
+
 sub read_file {
 
     my ($path, $contents_ref) = @_;
@@ -216,11 +252,23 @@ sub read_file {
     
     while (<$infile>)
     {
+	s{^=}{)};
+	s{^use lib '\.\.}{#use lib '..}m;
 	$$contents_ref .= $_;
     }
     
     close $infile or warn $!;
 }
+
+
+# write_file ( path, template, vars )
+# 
+# Write a file to the filename given by $path, using $template as the file
+# contents.  Substitute any occurrence of <<% var_name %> by looking up
+# 'var_name' in $vars.
+# 
+# Change any occurrence of ) at the beginning of a line to =, to reverse the
+# transformation carried out in &read_file.
 
 sub write_file {
     my ($path, $template, $vars) = @_;
@@ -234,6 +282,7 @@ sub write_file {
     }
 
     $template =~ s| <<% \s* (\w+) \s* %>> | $vars->{$1} |xmge;
+    $template =~ s| ^[)] | "=" |xmge;
     
     print "+ $path\n";
     
@@ -347,6 +396,98 @@ sub pack_files {
 	}
     }
 }
+
+
+=head1 DESCRIPTION
+
+This script is designed to be run inside the main directory of a newly-created
+Dancer application.  It adds the files necessary for the Web::DataService
+example application (see L<Web::DataService::Tutorial>) which you can then use
+as a basis for your own project.
+
+=head1 EXAMPLE
+
+Here is an application created using dancer and wdsinstallfiles:
+
+    $ dancer -a dstest
+    + dstest
+    + dstest/bin
+    + dstest/bin/app.pl
+    + dstest/config.yml
+    + dstest/environments
+    + dstest/environments/development.yml
+    + dstest/environments/production.yml
+    + dstest/views
+    + dstest/views/index.tt
+    + dstest/views/layouts
+    + dstest/views/layouts/main.tt
+    + dstest/lib
+    + dstest/lib/dstest.pm
+    + dstest/public
+    + dstest/public/css
+    + dstest/public/css/style.css
+    + dstest/public/css/error.css
+    + dstest/public/images
+    + dstest/public/500.html
+    + dstest/public/404.html
+    + dstest/public/dispatch.fcgi
+    + dstest/public/dispatch.cgi
+    + dstest/public/javascripts
+    + dstest/public/javascripts/jquery.js
+    + dstest/Makefile.PL
+    + dstest/t
+    + dstest/t/002_index_route.t
+    + dstest/t/001_base.t
+    
+    $ cd dstest
+    $ wdsinstallfiles
+    + ./config.yml
+      ./bin
+    + bin/dataservice.pl
+      ./public
+      public/css
+    + public/css/dsdoc.css
+      ./lib
+    + lib/PopulationData.pm
+    + lib/Example.pm
+      ./doc
+    + doc/doc_footer.tt
+    + doc/doc_not_found.tt
+    + doc/index.tt
+    + doc/doc_header.tt
+      doc/formats
+    + doc/formats/index.tt
+    + doc/formats/json_doc.tt
+    + doc/formats/text_doc.tt
+    + doc/doc_defs.tt
+    + doc/special_doc.tt
+    + doc/operation.tt
+    + doc/doc_strings.tt
+      ./data
+    + data/population_data.txt
+
+The application is ready to serve:
+
+    $ bin/dataservice.pl
+    >> Listening on 0.0.0.0:3000
+    == Entering the development dance floor ...
+
+=head1 AUTHOR
+
+This script has been written by Michael McClennen <mmcclenn@cpan.org>, based on
+the "dancer" script from the L<Dancer> distribution.
+
+=head1 SOURCE CODE
+
+See L<Web::DataService> for more information.
+
+=head1 LICENSE
+
+This module is free software and is published under the same
+terms as Perl itself.
+
+=cut
+
 
 sub templates {
 
@@ -769,7 +910,7 @@ use strict;
 
 package Example;
 
-use lib './lib';
+#use lib '../lib';		# Required for testing.  Remove from production app.
 
 use Dancer ':syntax';		# This module is required for
                                 # Web::DataService, until plugins for other
@@ -907,7 +1048,7 @@ $ds->define_node(
 # your application, you are free to add additional routes to process
 # certain URLs differently.
 
-any qr{.*}xs => sub {
+any qr{.*} => sub {
     
     return Web::DataService->handle_request(request);
 };
@@ -931,7 +1072,7 @@ hook after_error_render => sub {
 END_END_END
     'doc/doc_footer.tt' => << 'END_END_END',
 
-=head2 CONTACT
+)head2 CONTACT
 
 If you have questions about this data service, or wish to report a bug, please
 contact <% request.admin_name %> L<<% request.contact_info.name %>|mailto:<% request.contact_info.email %>>
@@ -941,7 +1082,7 @@ contact <% request.admin_name %> L<<% request.contact_info.name %>|mailto:<% req
 END_END_END
     'doc/doc_not_found.tt' => << 'END_END_END',
 
-=head2 ERROR: documentation page for <% title %> not found.
+)head2 ERROR: documentation page for <% title %> not found.
 
 END_END_END
     'doc/index.tt' => << 'END_END_END',
@@ -952,25 +1093,25 @@ L<Bureau of the Census|http://www.census.gov/>.
 
 You can use this code as a basis for building your own data services.
 
-=head2 Operations
+)head2 OPERATIONS
 
 The following data service operations are available:
 
-=over
+)over
 
-=item L<Single state|node:single>
+)item L<Single state|node:single>
 
 Returns information about a single state.
 
-=item L<Multiple states|node:list>
+)item L<Multiple states|node:list>
 
 Returns information about a list of states matching the specified criteria.
 
-=item L<Regions|node:regions>
+)item L<Regions|node:regions>
 
 Returns the list of regions defined by this data service.
 
-=back
+)back
 
 <% FORMATS(opt_extended=1) %>
 
@@ -981,35 +1122,35 @@ Returns the list of regions defined by this data service.
 
 END_END_END
     'doc/doc_header.tt' => << 'END_END_END',
-=encoding utf8
+)encoding utf8
 
-=head1 <% ds.title %>: <% doc_title %>
+)head1 <% ds.title %>: <% doc_title %>
 
 <% NAVTRAIL %>
 
 END_END_END
     'doc/formats/index.tt' => << 'END_END_END',
 
-=head2 DESCRIPTION
+)head2 DESCRIPTION
 
 This data service is capable of returning its results in a variety of formats.  This capability
 provides great flexibility, allowing such diverse activities as:
 
-=over
+)over
 
-=item *
+)item *
 
 Support for client applications written in Javascript
 
-=item *
+)item *
 
 Downloads of data in text format for use in spreadsheets
 
-=item *
+)item *
 
 Viewing of data in browser tabs.
 
-=back
+)back
 
 Each format has a default vocabulary in which its data is expressed.  The
 available formats and vocabularies are discussed below.
@@ -1019,11 +1160,11 @@ available formats and vocabularies are discussed below.
 <% INCLUDE VOCABULARIES opt_extended=1 opt_all=1 %>
 END_END_END
     'doc/formats/json_doc.tt' => << 'END_END_END',
-=head2 DESCRIPTION
+)head2 DESCRIPTION
 
 This page describes the JSON response format in detail.
 
-=head2 SYNOPSIS
+)head2 SYNOPSIS
 
 The JSON (L<JavaScript Object Notation|http://en.wikipedia.org/wiki/Json>)
 format is selected by ending a URL path with the suffix C<.json>.  This format
@@ -1034,11 +1175,11 @@ databases.  JSON responses are always encoded in UTF-8.
 The body of a response in this format consists of a single JSON object,
 containing one or more of the following fields:
 
-=for wds_table_no_header Field* | Description
+)for wds_table_no_header Field* | Description
 
-=over
+)over
 
-=item C<records>
+)item C<records>
 
 The value of this field is an array of objects, each representing a record
 from the database.
@@ -1047,12 +1188,12 @@ This field will always be present if the URL path and parameters are
 interpreted to be a valid query, but the array may be empty if the query does
 not match any records.
 
-=item C<records_found>
+)item C<records_found>
 
 This field will be present if the parameter L<count|node:special> was specified.  Its
 value will be the number of records matched by the main query.
 
-=item C<records_returned>
+)item C<records_returned>
 
 This field will be present if the paramter L<count|node:special> was specified.  Its
 value will be the number of records actually returned.
@@ -1062,98 +1203,98 @@ size of the result set is limited by default to <% request.default_limit %>.
 You can override this using the L<limit|node:special> parameter.
 <%- END %>
 
-=item C<record_offset>
+)item C<record_offset>
 
 This field will be present if the parameter L<count|node:special> was specified, and if
 the parameter L<offset|node:special> was specified with a value greater than zero.  The
 value in the second column will be the number of records that were skipped at the beginning
 of the result set.
 
-=item C<data_source>
+)item C<data_source>
 
 This field will be present if the parameter L<datainfo|node:special> was specified.
 Its value will be the name of this data source.
 
-=item C<documentation_url>
+)item C<documentation_url>
 
 This field will be present if the parameter L<datainfo|node:special> was specified.
 Its value will be a URL that provides documentation about the URL path
 used to fetch this data.  This URL will document both the parameters and the response fields.
 This information may be helpful in guiding the later interpretation of this data.
 
-=item C<data_url>
+)item C<data_url>
 
 This field will be present if the parameter L<datainfo|node:special> was specified.
 Its value will be the actual URL that was used to fetch this data.
 If this dataset is saved to disk, the included field will allow someone to later repeat this query.
 
-=item C<access_time>
+)item C<access_time>
 
 This field will be present if the parameter L<datainfo|node:special> was specified.
 Its value will be the date and time time (GMT) at which this data
 was accessed.  If this dataset is saved to disk, the included field will enable it to be
 compared with other datasets on the basis of access time.
 
-=item C<parameters>
+)item C<parameters>
 
 This field will be present if the parameter L<datainfo|node:special> was specified.  Its
 value will be an object whose fields represent the parameters and values that were used to 
 generate this result.  If this dataset is saved to disk, the parameter information may be 
 helpful in documenting how the data was selected, what it includes, and what it does not include.
 
-=item C<warnings>
+)item C<warnings>
 
 This field will be present if any warnings were generated during the execution
 of the query.  Its value will be an array of strings, each representing a
 warning message.
 
-=item C<errors>
+)item C<errors>
 
 This field will be present if a fatal error condition was encountered.  Its
 value will be an array of strings, each representing an error message.  In general,
 if this field is present then none of the others will be.
 
-=item C<status_code>
+)item C<status_code>
 
 This field will be present if the HTTP status code is anything other than
 200.  Its value will be one of the following:
 
-=over
+)over
 
-=item 400
+)item 400
 
 One or more of the URL parameters was invalid.  The reasons will be given by
 the field C<errors>.  This request should not be repeated without
 modification.
 
-=item 401
+)item 401
 
 This request requires authentication.  Note that the authentication module has
 not yet been added to the data service, so you should not be seeing this yet. 
 
-=item 404
+)item 404
 
 The URL path was invalid.  This request should not be repeated without
 modification.
 
-=item 500
+)item 500
 
 An internal error occurred.  If this condition persists, you should contact
 the server administrator.  Otherwise, the request may be resubmitted later.
 
-=back
+)back
 
-=back
+)back
 
 For example, consider the following URL path:
 
-=over
+)over
 
-=item *
+)item *
 
 L<op:single.json?state=WI>
 
-=back
+)back
 
 The body of the response is as follows:
 
@@ -1175,13 +1316,13 @@ documentation page for this URL path: L<node:single#RESPONSE>.
 
 Many URL paths will, of course, return multiple records.  For example:
 
-=over
+)over
 
-=item *
+)item *
 
 L<op:list.json?state=wi,mn,il&count>
 
-=back
+)back
 
     {
 	"elapsed_time": 0.000283,
@@ -1215,13 +1356,13 @@ inclusion of the fields C<elapsed_time>, C<records_found>, and C<records_returne
 
 Finally, consider the following URL:
 
-=over
+)over
 
-=item *
+)item *
 
 L<op:list.json?state=WI,IX&foo=1>
 
-=back
+)back
 
     {
 	"status_code": 400,
@@ -1238,39 +1379,39 @@ code of 400 (Bad Request) which indicates a problem with the URL parameters.
 END_END_END
     'doc/formats/text_doc.tt' => << 'END_END_END',
 
-=head2 DESCRIPTION
+)head2 DESCRIPTION
 
 This page describes the text response formats in detail.
 
-=head2 SYNOPSIS
+)head2 SYNOPSIS
 
 This service can produce responses in two different text formats: tab-separated and comma-separated.  Both
 of these formats can be loaded into a spreadsheet, or copied into an e-mail message or other text document.
 
 You may choose from any of the following three suffixes:
 
-=for wds_table_no_header Suffix* | Description
+)for wds_table_no_header Suffix* | Description
 
-=over
+)over
 
-=item C<.csv>
+)item C<.csv>
 
 Generate a download file in comma-separated text format.  Most browsers will save this
 file directly to disk; if you would rather see it immediately in a browser tab, then use
 the suffix C<.txt> instead.
 
-=item C<.tsv>
+)item C<.tsv>
 
 Generate a download file in tab-separated text format.
 
-=item C<.txt>
+)item C<.txt>
 
 Display the results in a browser tab in comma-separated text format.
 You will then be able to save this file to disk using the "Save Page As..." 
 menu item in your browser, which will produce the same result
 as if you had used the C<csv> suffix.
 
-=back
+)back
 
 Note that you should only use the C<.txt> suffix if your result set is
 of small to moderate size.  If you try to display a large result set
@@ -1279,84 +1420,84 @@ up an enormous amount of memory.
 
 In addition, you may choose to include one or more of the following URL parameters:
 
-=for wds_table_no_header Parameter* | Description
+)for wds_table_no_header Parameter* | Description
 
-=over
+)over
 
-=item datasource
+)item datasource
 
 If this parameter is specified, then extra header lines will be included at the
 beginning of the response.  These lines will include information about the data
 source, the URL used to generate this response, and more.  See below for more
 information.
 
-=item count
+)item count
 
 If this parameter is specified, then extra header lines will be included at the
 beginning of the response.  These lines will specify the number of records found
 and the number returned, as well as the elapsed time to compute this result.  See
 below for more information.
 
-=item header=no
+)item header=no
 
 If this parameter is specified, then no header material at all will be
 included.  The first line of the file will be the first data record,
 if any.  If no data records were found, the file will be empty.  This
 parameter doesn't need any value.
 
-=item lb=cr
+)item lb=cr
 
 If this parameter is specified, then each line will be terminated by a
 single carriage return instead of the standard carriage return/line
 feed sequence.
 
-=back
+)back
 
 The body of the response consists of a series of lines containing comma-separated or tab-separated values.
 The initial part of the file may contain some or all of the following lines:
 
-=for wds_table_no_header Label* | Description
+)for wds_table_no_header Label* | Description
 
-=over
+)over
 
-=item C<Data Source:>
+)item C<Data Source:>
 
 This line will be present if the parameter L<datainfo|node:special> was specified.
 The value in the second column will be the name of this data source.
 
-=item C<Documentation URL:>
+)item C<Documentation URL:>
 
 This line will be present if the parameter L<datainfo|node:special> was specified.
 The value in the second column will be a URL that provides documentation about the URL path
 used to fetch this data.  This URL will document both the parameters and the response fields.
 This information may be helpful in guiding the later interpretation of this data.
 
-=item C<Data URL:>
+)item C<Data URL:>
 
 This line will be present if the parameter L<datainfo|node:special> was specified.
 The value in the second column will be the actual URL that was used to fetch this data.
 If this dataset is saved to disk, the included line will allow someone to later repeat this query.
 
-=item C<Access Time:>
+)item C<Access Time:>
 
 This line will be present if the parameter L<datainfo|node:special> was specified.
 The value in the second column will be the date and time time (GMT) at which this data
 was accessed.  If this dataset is saved to disk, the included line will enable it to be
 compared with other datasets on the basis of access time.
 
-=item C<Parameters:>
+)item C<Parameters:>
 
 This line will be present if the parameter L<datainfo|node:special> was specified.  It will
 be followed by one line per parameter, giving the parameter name and value(s) used to generate this 
 result.  If this dataset is saved to disk, the parameter information may be helpful in documenting how
 the data was selected, what it includes, and what it does not include.
 
-=item C<Records Found:>
+)item C<Records Found:>
 
 This line will be present if the parameter L<count|node:special> was specified.  The 
 value in the second column will be the number of records that matched the main query.
 
-=item C<Records Returned:>
+)item C<Records Returned:>
 
 This line will be present if the paramter L<count|node:special> was specified.  The value
 in the second column will be the number of records actually returned.
@@ -1366,55 +1507,55 @@ size of the result set is limited by default to <% request.default_limit %>.
 You can override this using the L<limit|node:special> parameter.
 <%- END %>
 
-=item C<Record Offset:>
+)item C<Record Offset:>
 
 This line will be present if the parameter L<count|node:special> was specified, and if
 the parameter L<offset|node:special> was specified with a value greater than zero.  The
 value in the second column will be the number of records that were skipped at the beginning
 of the result set.
 
-=item C<Warning:>
+)item C<Warning:>
 
 One or more of these lines will be present if any warnings were generated during the execution
 of the query.  The warning message(s) will appear in the second column.
 
-=item C<Records:>
+)item C<Records:>
 
 If any of the lines mentioned so far in this table appear in the output, this line will appear immediately
 before the data header line.  It serves to mark off the supplementary header material from the data.
 
-=item I<data header>
+)item I<data header>
 
 Unless the parameter L<header=no|node:special> was specified, a data header line will always precede
 the first data line.  This header line will contain the name of each column.
 
-=back
+)back
 
 The data records will follow this header material, one record per line until the end of the file.
 
 For example, the following URL will produce the following output, consisting of a single data record
 with accompanying header line:
 
-=over
+)over
 
-=item *
+)item *
 
 L<op:single.txt?state=WI>
 
-=back
+)back
 
     "name","abbrev","region","pop2010"
     "Wisconsin","WI","MW","5686986"
 
 By contrast, the following URL includes some additional header information, terminated by a "Records:" line.
 
-=over
+)over
 
-=item *
+)item *
 
 L<op:list.txt?state=wi,mn,il&count>
 
-=back
+)back
 
     "Elapsed Time:","0.000152"
     "Records Found:","3"
@@ -1429,13 +1570,13 @@ This output includes several header lines, terminated by the "Records:" line.  F
 
 The following URL returns an HTTP error response instead of a data response:
 
-=over
+)over
 
-=item *
+)item *
 
 L<op:list.txt?state=WI,IX&foo=1>
 
-=back
+)back
 
     400 Bad Request
     
@@ -1447,13 +1588,13 @@ L<op:list.txt?state=WI,IX&foo=1>
 
 Lastly, the following URL generates just the data records with no header information at all:
 
-=over
+)over
 
-=item *
+)item *
 
 L<op:list.txt?region=NE&header=no>
 
-=back
+)back
 
     "Connecticut","CT","NE","3574097"
     "Maine","ME","NE","1328361"
@@ -1834,113 +1975,3 @@ END_END_END
     };
 }
 
-
-=pod
-
-=head1 NAME
-
-wdsinstallfiles - helper script to create new Web::DataService applications
-
-=head1 SYNOPSIS
-
-wdsinstallfiles [options]
-
-=head1 OPTIONS
-
-    -h, --help            : print what you are currently reading
-    -p, --path            : the path where application will be created
-                              (current directory if not specified)
-    -x, --no-check        : don't check for the latest version of Web::DataService
-                              (checking version implies internet connection)
-    -v, --version         : print the version of Web::DataService being used
-
-=head1 DESCRIPTION
-
-This script is designed to be run inside the main directory of a newly-created
-Dancer application.  It adds the files necessary for the Web::DataService
-example application (see L<Web::DataService::Tutorial>) which you can then use
-as a basis for your own project.
-
-=head1 EXAMPLE
-
-Here is an application created using dancer and wdsinstallfiles:
-
-    $ dancer -a dstest
-    + dstest
-    + dstest/bin
-    + dstest/bin/app.pl
-    + dstest/config.yml
-    + dstest/environments
-    + dstest/environments/development.yml
-    + dstest/environments/production.yml
-    + dstest/views
-    + dstest/views/index.tt
-    + dstest/views/layouts
-    + dstest/views/layouts/main.tt
-    + dstest/lib
-    + dstest/lib/dstest.pm
-    + dstest/public
-    + dstest/public/css
-    + dstest/public/css/style.css
-    + dstest/public/css/error.css
-    + dstest/public/images
-    + dstest/public/500.html
-    + dstest/public/404.html
-    + dstest/public/dispatch.fcgi
-    + dstest/public/dispatch.cgi
-    + dstest/public/javascripts
-    + dstest/public/javascripts/jquery.js
-    + dstest/Makefile.PL
-    + dstest/t
-    + dstest/t/002_index_route.t
-    + dstest/t/001_base.t
-    
-    $ cd dstest
-    $ wdsinstallfiles
-    ! ./config.yml exists, overwrite? [N/y/a]: a
-    + ./config.yml
-      ./bin
-    + bin/dataservice.pl
-      ./public
-      public/css
-    + public/css/dsdoc.css
-      ./lib
-    + lib/PopulationData.pm
-    + lib/Example.pm
-      ./doc
-    + doc/doc_footer.tt
-    + doc/doc_not_found.tt
-    + doc/index.tt
-    + doc/doc_header.tt
-      doc/formats
-    + doc/formats/index.tt
-    + doc/formats/json_doc.tt
-    + doc/formats/text_doc.tt
-    + doc/doc_defs.tt
-    + doc/special_doc.tt
-    + doc/operation.tt
-    + doc/doc_strings.tt
-      ./data
-    + data/population_data.txt
-
-The application is ready to serve:
-
-    $ bin/dataservice.pl
-    >> Listening on 0.0.0.0:3000
-    == Entering the development dance floor ...
-
-=head1 AUTHOR
-
-This script has been written by Michael McClennen <mmcclenn@cpan.org>, based on
-the "dancer" script from the L<Dancer> distribution.
-
-=head1 SOURCE CODE
-
-See L<Web::DataService> for more information.
-
-=head1 LICENSE
-
-This module is free software and is published under the same
-terms as Perl itself.
-
-=cut

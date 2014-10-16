@@ -6,16 +6,21 @@ wdsinstallfiles - helper script to create new Web::DataService applications
 
 =head1 SYNOPSIS
 
-wdsinstallfiles [options]
+wdsinstallfiles [options] [files]
 
 =head1 OPTIONS
 
     -h, --help            : print what you are currently reading
+    -f, --force           : force installation
     -p, --path            : the path where application will be created
                               (current directory if not specified)
     -x, --no-check        : don't check for the latest version of Web::DataService
                               (checking version implies internet connection)
     -v, --version         : print the version of Web::DataService being used
+
+If you name one or more files or file paths, i.e. "doc" or
+"bin/dataservice.pl", then only that file or files will be installed.
+Otherwise, all files necessary for the example application will be installed.
 
 =cut
 
@@ -46,11 +51,13 @@ my $no_check = 0;
 my $report_version = 0;
 my $name = undef;
 my $path = '.';
+my $force_install = 0;
 my $make = 0;
 
 
 GetOptions(
     "h|help"          => \$help,
+    "f|force"	      => \$force_install,
     "p|path=s"        => \$path,
     "x|no-check"      => \$no_check,
     "v|version"       => \$report_version,
@@ -81,6 +88,16 @@ if ( $report_version )
     print "Web::DataService $WDS_VERSION\n";
     exit 0;
 }
+
+# If filename arguments were specified, grab those.
+
+my (%INSTALL_FILTER);
+
+foreach my $f ( @ARGV )
+{
+    $INSTALL_FILTER{$f} = 1;
+}
+
 
 # Now determine which foundation framework we are using.  Currently, the only
 # one available is Dancer.
@@ -115,7 +132,14 @@ else
 	die "You must install Dancer in order to use Web::DataService.\n";
     }
     
-    die "You must run this program from the root directory of an already-installed Dancer application.  Try 'dancer -a myappname'.\n";
+    if ( $force_install )
+    {
+	version_check() unless $no_check;
+	unpack_files( &dancer_app_tree, &templates, '.' );
+    }
+    
+    die "You must run this program from the root directory of an already-installed Dancer application.  Try 'dancer -a myappname'.\n"
+	unless $force_install;
 }
 
 
@@ -172,7 +196,7 @@ sub dancer_app_tree {
 
 sub unpack_files {
     
-    my ($node, $templates, $file_root, $template_root) = @_;
+    my ($node, $templates, $file_root, $template_root, $subtree_override) = @_;
     
     while ( my ($name, $thing) = each %$node )
     {
@@ -181,10 +205,18 @@ sub unpack_files {
         my $file_path = catfile($file_root, $name);
 	my $template_path = $template_root ? "$template_root/$name" : $name;
 	
+	my $in_subtree = $subtree_override;
+	
+	if ( %INSTALL_FILTER )
+	{
+	    next unless $INSTALL_FILTER{$template_path} || $in_subtree;
+	    $in_subtree = 1;
+	}
+	
         if ( ref $thing eq 'HASH' )
 	{
             safe_mkdir($file_path);
-            unpack_files($thing, $templates, $file_path, $template_path);
+            unpack_files($thing, $templates, $file_path, $template_path, $in_subtree);
         }
 	
 	elsif ( ref $thing eq 'CODE' )
@@ -515,8 +547,7 @@ data1.0:
 
 port: 3000
 charset: "UTF-8"
-show_errors: 1
-log: "warning"
+environment: "production"
 
 # If you wish to access a backend datastore via DBI, you can uncomment the following and substitute the
 # appropriate settings.  You will need to make sure that your main application requires the module
@@ -713,16 +744,19 @@ sub initialize {
 	{ optional => 'SPECIAL(all)' });
     
     $ds->define_ruleset( 'single' =>
+        "The following parameter is required for this operation:",
 	{ param => 'state', valid => $valid_state, clean => 'uc' },
 	    "Return information about the specified state.",
 	    "You may specify either the full name or standard abbreviation.",
+        "You may also use the following parameter if you wish:",
 	{ optional => 'SPECIAL(show)', valid => 'extra' },
 	    "Display additional information about the specified state.  The value",
 	    "of this parameter must be one or more of the following, separated by commas.",
 	{ allow => 'special' },
-	"^You can also use any of the L<special parameters|node:special> with this request");
+	"^You can also use any of the L<special parameters|node:special> with this request.");
     
     $ds->define_ruleset( 'list' =>
+	"You can use any of the following parameters with this operation:",
 	{ optional => 'state', valid => $valid_state, list => qr{,}, clean => 'uc' },
 	    "Return information about the specified state or states.",
 	    "You may specify either the full names or standard abbreviations,",
@@ -736,11 +770,11 @@ sub initialize {
 	    "Display additional information about the selected states.  The value",
 	    "of this parameter must be one or more of the following, separated by commas.",
 	{ allow => 'special' },
-	"^You can also use any of the L<special parameters|node:special> with this request");
+	"^You can also use any of the L<special parameters|node:special> with this request.");
     
     $ds->define_ruleset( 'regions' =>
 	{ allow => 'special' },
-	"^You can use any of the L<special parameters|node:special> with this request");
+	"^You can use any of the L<special parameters|node:special> with this request.");
 }
 
 
@@ -822,7 +856,7 @@ sub list {
     my $name_filter = $request->clean_param_hash('state');
     my $region_filter = $request->clean_param_hash('region');
     my $order = $request->clean_param('order');
-    my $totals = $request->has_output_block('total');
+    my $totals = $request->has_block('total');
     
     my $return_all; $return_all = 1 unless $request->param_given('state') ||
 	$request->param_given('region');
@@ -1000,18 +1034,20 @@ $ds->define_node({ path => 'css',
 
 $ds->define_node(
     { path => 'single',
-      title => 'Single States',
-      usage => [ { params => 'state=wi', format => 'json' },
-      		 { params => 'state=tx&show=hist&header=no', format => 'txt' } ],
+      title => 'Single state',
+      place => 1,
+      usage => [ "single.json?state=wi",
+		 "single.txt?state=tx&show=hist&header=no" ],
       output => 'basic',
       optional_output => 'extra',
       role => 'PopulationData',
       method => 'single' },
 	"Returns information about a single U.S. state.",
     { path => 'list',
-      title => 'Multiple States',
-      usage => [ { params => 'region=ne&show=total', format => 'json' },
-		 { params => 'region=we&show=hist,total&count&datainfo', format => 'txt' } ],
+      title => 'Multiple states',
+      place => 2,
+      usage => [ "list.json?region=ne&show=total",
+		 "list.txt?region=we&show=hist,total&count&datainfo" ],
       output => 'basic',
       optional_output => 'extra',
       role => 'PopulationData',
@@ -1019,7 +1055,8 @@ $ds->define_node(
 	"Returns information about all of the states matching specified criteria.",
     { path => 'regions',
       title => 'Regions',
-      usage => { format => 'json' },
+      place => 3,
+      usage => "regions.txt",
       output => 'regions',
       role => 'PopulationData',
       method => 'regions' },
@@ -1097,25 +1134,11 @@ You can use this code as a basis for building your own data services.
 
 The following data service operations are available:
 
-)over
+<% NODELIST(opt_usage=1) %>
 
-)item L<Single state|node:single>
+<% FORMAT_SECTION(opt_extended=1) %>
 
-Returns information about a single state.
-
-)item L<Multiple states|node:list>
-
-Returns information about a list of states matching the specified criteria.
-
-)item L<Regions|node:regions>
-
-Returns the list of regions defined by this data service.
-
-)back
-
-<% FORMATS(opt_extended=1) %>
-
-<% VOCABULARIES(opt_extended=1, opt_all=1) %>
+<% VOCAB_SECTION(opt_extended=1, opt_all=1) %>
 
 
 
@@ -1155,9 +1178,9 @@ Viewing of data in browser tabs.
 Each format has a default vocabulary in which its data is expressed.  The
 available formats and vocabularies are discussed below.
 
-<% INCLUDE FORMATS opt_extended=1 %>
+<% FORMAT_SECTION(opt_extended=1) %>
 
-<% INCLUDE VOCABULARIES opt_extended=1 opt_all=1 %>
+<% VOCAB_SECTION(opt_extended=1, opt_all=1) %>
 END_END_END
     'doc/formats/json_doc.tt' => << 'END_END_END',
 )head2 DESCRIPTION
@@ -1613,7 +1636,7 @@ END_END_END
     #
     # ===========================
 
-    USE dumper;
+    #USE dumper;
     SET block_done = { };
     
     # Edit the following definitions to modify the labels used for navigation
@@ -1621,7 +1644,7 @@ END_END_END
     
     PROCESS doc_strings.tt;
     
-    IF ds.version; SET main_doc_label = "$main_doc_label (v. $ds.version)"; END;
+    IF ds.version; SET main_doc_label = "$main_doc_label $ds.name v$ds.version"; END;
         
     msgval = {
     	format_param = ds.special_param('format')
@@ -1633,140 +1656,152 @@ END_END_END
     MACRO sub_value(msg, value) GET message.$msg FILTER replace('%s', value);
     
     # 
-    # DOCSTRING : Include the documentation string for this node, if any.
-    # -------------------------------------------------------------------
-        
-    BLOCK DOCSTRING; GET request.document_node or sub_message("MSG_DOCSTRING_MISSING"); END;
+    # DESCRIPTION_SECTION: Include a "description" section for this node
+    # ------------------------------------------------------------------
     
-    MACRO DOCSTRING PROCESS DOCSTRING;
+    BLOCK DESCRIPTION_SECTION;
+        IF block_done.descrip; RETURN; ELSE; SET block_done.descrip = 1; END;
+	SET descrip_doc = request.document_node;
+	IF descrip_doc or opt_force;
+    	    GET "\n=head2 $section_label.descrip\n\n";
+            GET descrip_doc or sub_message("MSG_DOCSTRING_MISSING");
+        END;
+    END;
     
-    #
-    # USAGE: Display usage examples for this URL path
-    # -----------------------------------------------
+    MACRO DESCRIPTION_SECTION INCLUDE DESCRIPTION_SECTION;
     
-    BLOCK USAGE;
+    # 
+    # DOCSTRING: Include the node documentation string
+    # ------------------------------------------------
+    
+    BLOCK DOCSTRING;
+        SET node_doc = request.document_node;
+	GET node_doc or sub_message("MSG_DOCSTRING_MISSING");
+    END;
+    
+    MACRO DOCSTRING INCLUDE DOCSTRING;
+    
+    #     
+    # USAGE_SECTION, USAGE: Document the usage examples, if any, for this node
+    # ------------------------------------------------------------------------
+    
+    BLOCK USAGE_SECTION;
         IF block_done.usage; RETURN; ELSE; SET block_done.usage = 1; END;
         SET usage_doc = request.document_usage;
 	IF usage_doc;
-	    IF opt_noheader; "\n";
-	    ELSE; "\n=head2 $section_label.usage\n\n";
+	    "\n=head2 $section_label.usage\n\n";
+            IF content; GET content FILTER trim; "\n\n";
+            ELSE; sub_message("MSG_USAGE_HEADER_LONG"); "\n\n";
             END;
-	    IF content; GET content FILTER trim; "\n\n";
-	    ELSE; sub_message("MSG_USAGE_HEADER_OP"); "\n\n";
-            END;
-	    usage_doc;
+            GET usage_doc;
+        ELSIF opt_force;
+            "\n=head2 $section_label.usage\n\n";
+            GET sub_message("MSG_USAGE_NONE_DEFINED");
+        END;
+    END;
+    
+    MACRO USAGE_SECTION INCLUDE USAGE_SECTION;
+    
+    BLOCK USAGE;
+        SET usage_doc = request.document_usage;
+	IF usage_doc; usage_doc;
+	ELSIF opt_force; sub_message("MSG_USAGE_NONE_DEFINED");
         END;
     END;
     
     MACRO USAGE INCLUDE USAGE;
     
-    #
-    # PARAMETERS: Document the parameters corresponding to this URL path
-    # ------------------------------------------------------------------
+    # 
+    # NODELIST: List all that have a 'place' attribute
+    # ------------------------------------------------
     
-    BLOCK PARAMETERS;
-        IF block_done.params; RETURN; ELSE; SET block_done.params = 1; END;
-    	"\n=head2 $section_label.params\n\n";
-	SET param_doc = request.document_params(ruleset);
-	IF content; GET content FILTER trim; "\n\n"; sub_message(param_doc);
-	ELSIF param_doc; sub_message("MSG_PARAM_HEADER_OP"); "\n\n"; param_doc;
-	ELSE; sub_message("MSG_PARAM_NONE_DEFINED");
-	END;
+    BLOCK NODELIST;
+	SET options = { };
+	IF opt_usage; options.usage = sub_message("MSG_USAGE_HEADER_SHORT"); END;
+	IF opt_list; options.list = opt_list; END;
+    	SET nodelist_doc = request.document_nodelist(options);
+	IF nodelist_doc;
+	    IF content; GET content FILTER trim; "\n\n";
+	    END;
+	    nodelist_doc;
+        END;
     END;
     
-    MACRO PARAMETERS(ruleset) INCLUDE PARAMETERS;
+    MACRO NODELIST INCLUDE NODELIST;
     
     #
-    # METHODS: Document the HTTP methods accepted by this URL path
-    # ------------------------------------------------------------
+    # PARAMETER_SECTION, PARAMETERS: Document the parameters corresponding to this URL path
+    # -------------------------------------------------------------------------------------
+    
+    BLOCK PARAMETER_SECTION;
+        IF block_done.params; RETURN; ELSE; SET block_done.params = 1; END;
+	SET param_doc = request.document_params(ruleset);
+	IF param_doc;
+    	    "\n=head2 $section_label.params\n\n";
+	    IF content; GET content FILTER trim; "\n\n";
+            END;
+            GET param_doc;
+        ELSIF opt_force;
+            "\n=head2 $section_label.params\n\n";
+            GET sub_message("MSG_PARAM_NONE_DEFINED"); "\n\n";
+        END;
+    END;
+    
+    MACRO PARAMETER_SECTION INCLUDE PARAMETER_SECTION;
+    
+    BLOCK PARAMETERS;
+        SET param_doc = request.document_params(ruleset);
+	IF param_doc; param_doc;
+	ELSIF opt_force; sub_message("MSG_PARAM_NONE_DEFINED"); "\n\n";
+        END;
+    END;
+    
+    MACRO PARAMETERS INCLUDE PARAMETERS;
+    
+    #
+    # METHOD_SECTION, METHODS: Document the HTTP methods accepted by this URL path
+    # ----------------------------------------------------------------------------
+    
+    BLOCK METHOD_SECTION;
+        IF block_done.methods; RETURN; ELSE; SET block_done.methods = 1; END;
+        SET method_list = request.document_http_methods;
+        IF method_list;
+      	    "\n=head2 $section_label.methods\n\n";
+            IF content; GET content FILTER trim;
+ 	    ELSIF request.node_has_operation; sub_message("MSG_METHOD_HEADER_OP");
+ 	    ELSE; sub_message("MSG_METHOD_HEADER_NODE");
+	    END;
+	    GET " $method_list";
+        ELSIF opt_force;
+      	    "\n=head2 $section_label.methods\n\n";
+	    sub_message("MSG_METHOD_NONE_DEFINED");
+        END;
+    END;
+    
+    MACRO METHOD_SECTION INCLUDE METHOD_SECTION;
     
     BLOCK METHODS;
-        IF block_done.methods; RETURN; ELSE; SET block_done.methods = 1; END;
-        SET method_list = request.document_http_methods or sub_method("MSG_METHOD_NONE_DEFINED");
-        "\n=head2 $section_label.methods\n\n";
-	IF content; GET content FILTER trim;
-        ELSIF request.node_has_operation; sub_message("MSG_METHOD_HEADER_OP");
-        ELSE; sub_message("MSG_METHOD_HEADER_NODE");
+        SET method_doc = request.document_http_methods;
+	IF method_doc; method_doc;
+	ELSIF opt_force; sub_message("MSG_METHOD_NONE_DEFINED");
         END;
-	GET " $method_list";
     END;
     
     MACRO METHODS INCLUDE METHODS;
     
-    #
-    # FORMATS: Document the formats allowed by this URL path
-    # ------------------------------------------------------
-    
-    BLOCK FORMATS;
-        IF block_done.formats; RETURN; ELSE; SET block_done.formats = 1; END;
-        SET options = { };
-        IF opt_extended; options.extended = 1; END;
-	IF opt_all; options.path = '/'; END;
-	IF request.node_path == '/'; opt_all = 1; END;
-	SET format_doc = request.document_formats(options);
-	"\n=head2 $section_label.formats\n\n";
-  	IF format_doc.match('^MSG_'); sub_message(format_doc);
-	ELSIF content; GET content FILTER trim; "\n\n$format_doc";
-	ELSIF opt_all;
-	    sub_message("MSG_FORMAT_HEADER_ALL");
-	    sub_message("MSG_FORMAT_HEADER_SUFFIX") IF ds.has_feature('format_suffix');
-	    sub_message("MSG_FORMAT_HEADER_PARAM") IF ds.special_param('format');
-	    "\n\n$format_doc";
-	ELSE;
-	    sub_message("MSG_FORMAT_HEADER_SOME");
-	    sub_message("MSG_FORMAT_HEADER_SUFFIX") IF ds.has_feature('format_suffix');
-	    sub_message("MSG_FORMAT_HEADER_PARAM") IF ds.special_param('format');
-	    IF not ds.has_feature('format_suffix');
-	        default_value = request.default_format;
-	        sub_value("MSG_FORMAT_HEADER_DEFAULT", default_value) IF default_value;
-	    END;
-	    "\n\n$format_doc";
-	END;
-    END;
-    
-    MACRO FORMATS INCLUDE FORMATS;
-    
-    #
-    # VOCABULARIES: Document the vocabularies allowed by this URL path
-    # ----------------------------------------------------------------
-    
-    BLOCK VOCABULARIES;
-        IF block_done.vocabs; RETURN; ELSE; SET block_done.vocabs = 1; END;
-	SET options = { };
-        IF opt_extended; options.extended = 1; END;
-	IF opt_all; options.path = '/'; END;
-	IF request.node_path == '/'; opt_all = 1; END;
-	SET vocab_doc = request.document_vocabs(options);
-	IF vocab_doc;
-	    "\n=head2 $section_label.vocabs\n\n";
-	    IF content;
-	        GET content FILTER trim; "\n\n$vocab_doc";
-	    ELSIF opt_all;
-	        sub_message("MSG_VOCAB_HEADER_ALL");
-	        sub_message("MSG_VOCAB_HEADER_PARAM") IF ds.special_param('vocab');
-	        "\n\n$vocab_doc";
-	    ELSE;
-	        sub_message("MSG_VOCAB_HEADER_SOME");
-	        sub_message("MSG_VOCAB_HEADER_PARAM") IF ds.special_param('vocab');
-	        "\n\n$vocab_doc";
-            END;
-	END;
-    END;
-    
-    MACRO VOCABULARIES INCLUDE VOCABULARIES;
-    
     # 
-    # RESPONSE: Document the response fields returned by this URL path
-    # ----------------------------------------------------------------
-
-    BLOCK RESPONSE;
+    # RESPONSE_SECTION: Document the response fields returned by this URL path
+    # ------------------------------------------------------------------------
+    
+    BLOCK RESPONSE_SECTION;
         IF block_done.response; RETURN; ELSE; SET block_done.response = 1; END;
         "\n=head2 $section_label.response\n\n";
 	SET response_doc = request.document_response;
 	SET fixed = request.output_label;
 	SET optional = request.optional_output;
 	IF response_doc;
-	    IF content; GET content FILTER trim;
+  	    IF response_doc.match('^MSG_'); sub_message(response_doc);
+	    ELSIF content; GET content FILTER trim; "\n\n$response_doc";
 	    ELSE;
 	        sub_message("MSG_RESPONSE_HEADER");
 	    	IF fixed && optional;
@@ -1775,36 +1810,118 @@ END_END_END
 	    	ELSIF optional;
 	            sub_message("MSG_RESPONSE_HEADER_OPT_ONLY");
 	    	END;
-		"\n\n";
+		"\n\n$response_doc";
 	    END;
-	    GET response_doc;
-	    INCLUDE FORMATS;
-	    INCLUDE VOCABULARIES;
 	ELSE;
 	    sub_message("MSG_RESPONSE_NONE_DEFINED");
 	END;
     END;
     
+    MACRO RESPONSE_SECTION INCLUDE RESPONSE_SECTION;
+    
+    BLOCK RESPONSE;
+        SET response_doc = request.document_response;
+  	IF response_doc.match('^MSG_'); sub_message(response_doc);
+	ELSIF response_doc; response_doc;
+	ELSE; sub_message("MSG_RESPONSE_NONE_DEFINED");
+        END;
+    END;
+    
     MACRO RESPONSE INCLUDE RESPONSE;
     
     #
-    # STANDARD: Include all of the standard blocks for an "operation" page
-    # --------------------------------------------------------------------
+    # FORMAT_SECTION, FORMATS: Document the formats allowed by this URL path
+    # ----------------------------------------------------------------------
     
-    BLOCK STANDARD;
-        INCLUDE PARAMETERS;
-	INCLUDE METHODS;
-	INCLUDE RESPONSE;
+    BLOCK FORMAT_SECTION;
+        IF block_done.formats; RETURN; ELSE; SET block_done.formats = 1; END;
+        SET options = { };
+        IF opt_extended; options.extended = 1; END;
+	IF opt_all; options.all = 1; END;
+	IF request.node_path == '/'; options.all = 1; END;
+	SET format_doc = request.document_formats(options);
+	GET "\n=head2 $section_label.formats\n\n";
+  	IF format_doc.match('^MSG_'); sub_message(format_doc);
+	ELSIF content; GET content FILTER trim; "\n\n$format_doc";
+	ELSIF options.all;
+	    sub_message("MSG_FORMAT_HEADER_ALL");
+	    sub_message("MSG_FORMAT_HEADER_SUFFIX") IF ds.has_feature('format_suffix');
+	    sub_message("MSG_FORMAT_HEADER_PARAM") IF ds.special_param('format');
+	    GET "\n\n$format_doc";
+	ELSE;
+	    sub_message("MSG_FORMAT_HEADER_SOME");
+	    sub_message("MSG_FORMAT_HEADER_SUFFIX") IF ds.has_feature('format_suffix');
+	    sub_message("MSG_FORMAT_HEADER_PARAM") IF ds.special_param('format');
+	    IF not ds.has_feature('format_suffix');
+	        default_value = request.default_format;
+	        sub_value("MSG_FORMAT_HEADER_DEFAULT", default_value) IF default_value;
+	    END;
+	    GET "\n\n$format_doc";
+        END;
     END;
     
-    MACRO STANDARD INCLUDE STANDARD;
+    MACRO FORMAT_SECTION INCLUDE FORMAT_SECTION;
+    
+    BLOCK FORMATS;
+        SET options = { };
+        IF opt_extended; options.extended = 1; END;
+	IF opt_all; options.all = 1; END;
+	IF request.node_path == '/'; options.all = 1; END;
+        SET format_doc = request.request.document_formats(options);
+  	IF format_doc.match('^MSG_'); sub_message(format_doc);
+	ELSE; format_doc;
+        END;
+    END;
+    
+    MACRO FORMATS INCLUDE FORMATS;
+    
+    #
+    # VOCAB_SECTIOn, VOCABS: Document the vocabularies allowed by this URL path
+    # -------------------------------------------------------------------------
+    
+    BLOCK VOCAB_SECTION;
+        IF block_done.vocabs; RETURN; ELSE; SET block_done.vocabs = 1; END;
+        SET options = { };
+        IF opt_extended; options.extended = 1; END;
+	IF opt_all; options.all = 1; END;
+	IF request.node_path == '/'; options.all = 1; END;
+	SET vocab_doc = request.document_vocabs(options);
+	GET "\n=head2 $section_label.vocabs\n\n";
+  	IF vocab_doc.match('^MSG_'); sub_message(vocab_doc);
+	ELSIF content; GET content FILTER trim; "\n\n$vocab_doc";
+	ELSIF options.all;
+	    sub_message("MSG_VOCAB_HEADER_ALL");
+	    sub_message("MSG_VOCAB_HEADER_PARAM") IF ds.special_param('vocab');
+	    "\n\n$vocab_doc";
+	ELSE;
+	    sub_message("MSG_VOCAB_HEADER_SOME");
+	    sub_message("MSG_VOCAB_HEADER_PARAM") IF ds.special_param('vocab');
+	    "\n\n$vocab_doc";
+        END;
+    END;
+        
+    MACRO VOCAB_SECTION INCLUDE VOCAB_SECTION;
+    
+    BLOCK VOCABS;
+        SET options = { };
+        IF opt_extended; options.extended = 1; END;
+	IF opt_all; options.all = 1; END;
+	IF request.node_path == '/'; options.all = 1; END;
+        SET vocab_doc = request.request.document_vocabs(options);
+  	IF vocab_doc.match('^MSG_'); sub_message(vocab_doc);
+	ELSIF vocab_doc; vocab_doc;
+	ELSE; sub_message("MSG_VOCAB_NONE_ALLOWED");
+        END;
+    END;
+    
+    MACRO VOCABS INCLUDE VOCABS;
     
     # 
     # TRAIL: Add a navigation trail to the page
     # -----------------------------------------
     
     BLOCK NAVTRAIL;
-        IF block_done.trail; RETURN; ELSE; SET block_done.trail = 1; END;
+        # IF block_done.trail; RETURN; ELSE; SET block_done.trail = 1; END;
 	SET navtrail = "";
         FOREACH item IN request.list_navtrail(main_doc_label);
 	    IF navtrail; SET navtrail = "$navtrail E<GT> $item";
@@ -1815,36 +1932,6 @@ END_END_END
     
     MACRO NAVTRAIL INCLUDE NAVTRAIL;
     
-    # 
-    # URL: Generate an example URL
-    # ----------------------------
-    
-    BLOCK URL;
-        SET args = { };
-	args.operation = operation;
-	IF documentation; args.documentation = documentation; END;
-    	IF format; args.format = format; END;
-	IF params; args.params = params; END;
-	IF fragment; args.fragment = fragment; END;
-	IF type; args.type = type; END;
-	dumper.dump(args);
-	# ds.generate_url(args);
-    END;
-    
-    MACRO URL INCLUDE URL;
-    
-    BLOCK DOC_URL;
-        SET args = { documentation = path };
-        IF format; args.format = format; END;
-        IF fragment; args.fragment = fragment; END;
-        IF type; args.type = type; END;
-        SET url = ds.generate_url(args);
-        IF title; "L<$title|$url>";
-        ELSE; "L<$url>"; END;
-    END;
-    
-    MACRO DOC_URL(path) INCLUDE DOC_URL;
-
 -%>
 END_END_END
     'doc/special_doc.tt' => << 'END_END_END',
@@ -1855,25 +1942,28 @@ You can use any of the following special parameters with any request:
 END_END_END
     'doc/operation.tt' => << 'END_END_END',
 
-<% DOCSTRING %>
+<% DESCRIPTION_SECTION(opt_force=1) %>
 
-<% USAGE %>
+<% USAGE_SECTION %>
 
-<% PARAMETERS %>
+<% PARAMETER_SECTION(opt_force=1) %>
 
-<% METHODS %>
+<% METHOD_SECTION(opt_force=1) %>
 
-<% RESPONSE %>
+<% RESPONSE_SECTION(opt_force=1) %>
 
-<% FORMATS %>
+<% FORMAT_SECTION %>
+
+<% VOCAB_SECTION %>
 END_END_END
     'doc/doc_strings.tt' => << 'END_END_END',
 <%-
     
-    main_doc_label = "Main Documentation";
+    main_doc_label = "Example Data Service";
     main_doc_prefix = "";
     
     section_label = {
+        descrip = "DESCRIPTION"
         usage = "USAGE"
         params = "PARAMETERS"
  	methods = "METHODS"
@@ -1882,26 +1972,34 @@ END_END_END
     	vocabs = "VOCABULARIES"
     };
     
+    special_param = {
+        show = ds.special_param('show')
+	format = ds.special_param('format')
+        vocab = ds.special_param('vocab')
+    };
+    
     message = {
         
 	MSG_DOCSTRING_MISSING = "I<The documentation string for this node is missing.>  "
 	
-	MSG_USAGE_HEADER_OP = "Here are some examples of how to use this operation:"
+	MSG_USAGE_HEADER_LONG = "Here are some usage examples:"
+	MSG_USAGE_HEADER_SHORT = "For example:"
+	MSG_USAGE_NONE_DEFINED = "I<No usage examples are given.>"
 	
-	MSG_PARAM_HEADER_OP = "You can use any of the following parameters with this operation:"
+	MSG_PARAM_HEADER_LONG = "You can use any of the following parameters with this operation:"
 	MSG_PARAM_NONE_DEFINED = "I<No parameters are defined.>"
 	
     	MSG_FORMAT_HEADER_SOME = "The following response formats are available for this operation.  "
     	MSG_FORMAT_HEADER_ALL = "The following response formats are available for this data service.  Not all of these may be available for every operation.  "
 	MSG_FORMAT_HEADER_SUFFIX = "You must select the desired format for a request by adding the appropriate suffix to the URI path.  "
-	MSG_FORMAT_HEADER_PARAM = "You can select the desired format by using the parameter C<$msgval.format_param> with the appropriate format name.  "
+	MSG_FORMAT_HEADER_PARAM = "You can select the desired format by using the parameter C<$special_param.format> with the appropriate format name.  "
 	MSG_FORMAT_HEADER_DEFAULT = "The default format for this operation is C<%s>."
         MSG_FORMAT_NONE_DEFINED = "I<No output formats are defined for this data service.>  "
 	MSG_FORMAT_NONE_ALLOWED = "I<No output formats are configured for this operation.>  "
 	
 	MSG_VOCAB_HEADER_SOME = "The following response vocabularies are available for this operation.  "
     	MSG_VOCAB_HEADER_ALL = "The following response vocabularies are available for this data service.  "
-	MSG_VOCAB_HEADER_PARAM = "If you wish your responses to be expressed in a vocabulary other than the default for your selected format, you can use the C<$msgval.vocab_param> parameter with the appropriate vocabulary name.  "
+	MSG_VOCAB_HEADER_PARAM = "If you wish your responses to be expressed in a vocabulary other than the default for your selected format, you can use the C<$special_param.vocab> parameter with the appropriate vocabulary name.  "
 	MSG_VOCAB_NONE_ALLOWED = "I<No output vocabularies are configured for this operation.>  "
 	
 	MSG_METHOD_NONE_DEFINED = "I<none are defined>"
@@ -1910,8 +2008,8 @@ END_END_END
 	
 	MSG_RESPONSE_HEADER = "The response to an HTTP request on this path will consist of fields from the following list.  "
 	MSG_RESPONSE_HEADER_FIXED = "The block C<%s> is always present.  "
-	MSG_RESPONSE_HEADER_OPT = "The others may be selected using the parameter C<$msgval.show_param>.  "
-	MSG_RESPONSE_HEADER_OPT_ONLY = "You can select which blocks will be present in the response using the parameter C<$msgval.show_param>.  "
+	MSG_RESPONSE_HEADER_OPT = "The others may be selected using the parameter C<$special_param.show>.  "
+	MSG_RESPONSE_HEADER_OPT_ONLY = "You can select which blocks will be present in the response using the parameter C<$special_param.show>.  "
 	MSG_RESPONSE_NONE_DEFINED = "I<No response is defined for this operation.>  "
     };
         

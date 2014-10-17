@@ -17,7 +17,9 @@ name: Web-DataService
 provides:
   Web::DataService:
     file: lib/Web/DataService.pm
-    version: '0.24'
+    version: '0.25'
+  Web::DataService::Document:
+    file: lib/Web/DataService/Document.pm
   Web::DataService::Execute:
     file: lib/Web/DataService/Execute.pm
   Web::DataService::Format:
@@ -67,4 +69,4 @@ requires:
   perl: '5.012'
 resources:
   license: http://dev.perl.org/licenses/
-version: '0.24'
+version: '0.25'
